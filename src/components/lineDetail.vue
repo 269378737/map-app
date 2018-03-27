@@ -59,16 +59,33 @@
         });
 
         let run = () => {
-          this.getMyLocation().then( () => {
-            this.getStation().then( () => {
-              this.getDeviceLocation().then( () => {
-                this.calculateArrive();
-                this.drawCarToLine();
-              });
-              this.showLatestStation();
-              this.lineSearch(this.stationList);
-              this.stationMarker();
-            })
+          this.map.clearMap();
+          // this.getMyLocation().then( () => {
+          //   this.getStation().then( () => {
+          //     this.getDeviceLocation().then( () => {
+          //       this.carLocationMarker();
+          //       this.calculateArrive();
+          //       this.fitView();
+          //     });
+          //     this.showLatestStation();
+          //     this.lineSearch(this.stationList);
+          //     this.stationMarker();
+          //   })
+          // }).catch( e => {
+          //   console.error('发生错误，错误原因：', e)
+          // });
+
+          Promise.all([
+            this.getMyLocation(),
+            this.getStation(),
+            this.getDeviceLocation()
+          ]).then( () => {
+            this.carLocationMarker();
+            this.calculateArrive();
+            this.fitView();
+            this.showLatestStation();
+            this.lineSearch(this.stationList);
+            this.stationMarker();
           }).catch( e => {
             console.error('发生错误，错误原因：', e)
           });
@@ -77,6 +94,93 @@
         setInterval(run, 15000);
         run();
       },
+
+
+      /** 站点标注 */
+      stationMarker(){
+        this.stationList.forEach( o => {
+          let stationLngLat = [ o.Lng, o.Lat ];
+          let content = `<div class="marker-content">${o.Name}</div>`
+
+          // 添加水滴标注
+          this.createMarker({
+            location: stationLngLat,
+            offset: new AMap.Pixel(-10,-30)
+          });
+          // 添加文字标注
+          this.createMarker({
+            location: stationLngLat,
+            content: content,
+            offset: new AMap.Pixel(-50,-55)
+          });
+        });
+      },
+      
+      toAttention(){
+        var self = this, url = '', formData = new FormData();
+        url = self.decState == 0 ? '/gps/index.php/device/addFellow' : '/gps/index.php/device/delFellow';
+        formData.append('DeviceID', self.deviceId);
+        self.$http.post(domain+url, formData)
+          .then(function (response) {
+            if (response.data.return) {
+              self.decState = self.decState == 0 ? 1 : 0;
+              self.showDialog('操作成功！');
+            } else {
+              self.showDialog('操作失败！')
+            }
+          })
+          .catch(function (error) {
+            console.log(error);
+          });
+      },
+      
+      /** 计算车辆离我最近站还有几个站以及多久到达 */
+      calculateArrive( ){
+        let curStation = this.deviceStation( this.deviceLocation,  this.stationList);
+        let my = this.disLatestStation( this.stationList );
+
+        let tempMy = this.stationList.find( o => o.Name == my.name );
+        let tempCur = this.stationList.find( o => o.Name == curStation.name );
+
+        if( tempCur.Order - tempMy.Order <= 0 ){
+          this.isStart = true;
+          this.disStation = tempMy.Order - tempCur.Order;
+
+          // 计算车辆离 我附近最近的站点的距离(米)，并计算出所需时长
+          let distance = AMap.GeometryUtil.distance([tempMy.Lng, tempMy.Lat], [ tempCur.Lng, tempCur.Lat ]);
+          this.times = this.deviceLocation[0].speed == 0 ? 0 : Math.round(((distance / 1000) / parseFloat(this.deviceLocation[0].speed)) * 60);
+
+        } else {
+          this.isStart = false;
+          this.disStation = `暂未发车`;
+        }
+      },
+
+      /** 标注车辆位置 */
+      carLocationMarker(){
+        let deviceLngLat = [ this.deviceLocation[0].baiduLng, this.deviceLocation[0].baiduLat ];
+        // 标注车辆位置
+        this.createMarker({
+          location: deviceLngLat,
+          offset: new AMap.Pixel(-20,-25),
+          img: './static/img/icon_carDetailLocation.png'
+        });
+      },
+
+      /** 在地图上显示距离我最近的站点 */
+      showLatestStation(){
+        let station = this.disLatestStation(this.stationList);
+        this.myLatestStation = station.name;
+      },
+
+      /** 绘制各路线并根据路线大小缩放 */
+      fitView(){
+        let line1 = this.lineSearch( this.drawCarToLine(), 0 );
+        let line2 = this.lineSearch( this.drayMyToLine(), 1);
+        this.map.setFitView([line1, line2]);
+      },
+
+      /*************************************************分割线******************************************/
 
       /** 定位 */
       getMyLocation(){
@@ -120,24 +224,7 @@
           });
         })
       },
-      toAttention(){
-        var self = this, url = '', formData = new FormData();
-        url = self.decState == 0 ? '/gps/index.php/device/addFellow' : '/gps/index.php/device/delFellow';
-        formData.append('DeviceID', self.deviceId);
-        self.$http.post(domain+url, formData)
-          .then(function (response) {
-            if (response.data.return) {
-              self.decState = self.decState == 0 ? 1 : 0;
-              self.showDialog('操作成功！');
-            } else {
-              self.showDialog('操作失败！')
-            }
-          })
-          .catch(function (error) {
-            console.log(error);
-          });
-      },
-
+      
       /** 获取指定车辆的站点信息 */
       getStation(){
         let data = this.createFormData({
@@ -156,28 +243,6 @@
 
       },
 
-      /** 计算车辆离我最近站还有几个站以及多久到达 */
-      calculateArrive( ){
-        let curStation = this.deviceStation( this.deviceLocation,  this.stationList);
-        let my = this.disLatestStation( this.stationList );
-
-        let tempMy = this.stationList.find( o => o.Name == my.name );
-        let tempCur = this.stationList.find( o => o.Name == curStation.name );
-
-        if( tempCur.Order - tempMy.Order <= 0 ){
-          this.isStart = true;
-          this.disStation = tempMy.Order - tempCur.Order;
-
-          // 计算车辆离 我附近最近的站点的距离(米)，并计算出所需时长
-          let distance = AMap.GeometryUtil.distance([tempMy.Lng, tempMy.Lat], [ tempCur.Lng, tempCur.Lat ]);
-          this.times = this.deviceLocation[0].speed == 0 ? 0 : Math.round(((distance / 1000) / parseFloat(this.deviceLocation[0].speed)) * 60);
-
-        } else {
-          this.isStart = false;
-          this.disStation = `暂未发车`;
-        }
-      },
-
       /** 获取指定车辆的位置信息 */
       getDeviceLocation(){
         let data = this.createFormData({
@@ -191,12 +256,6 @@
             reject(`获取ID为${this.deviceId}的设备位置信息出错! , ${e}`);
           })
         });
-      },
-
-      /** 在地图上显示距离我最近的站点 */
-      showLatestStation(){
-        let station = this.disLatestStation(this.stationList);
-        this.myLatestStation = station.name;
       },
 
       /** 获取距离我的位置最近的公交站点 */
@@ -216,7 +275,7 @@
         return arr[0];
       },
 
-      /** 根据车辆的经纬度确定车辆所在站点 */
+      /** 根据车辆的经纬度确定车辆最近站点 */
       deviceStation( device, stationList ){
         let deviceLngLat = [ device[0].baiduLng, device[0].baiduLat ];
 
@@ -231,34 +290,7 @@
 
         // 选出离车辆当前位置最近的站点
         arr.sort((a,b) => a.distance - b.distance );
-
-        // 标注车辆位置
-        this.createMarker({
-          location: deviceLngLat,
-          offset: new AMap.Pixel(-20,-25),
-          img: './static/img/icon_carDetailLocation.png'
-        });
         return arr[0];
-      },
-
-      /** 站点标注 */
-      stationMarker(){
-        this.stationList.forEach( o => {
-          let stationLngLat = [ o.Lng, o.Lat ];
-          let content = `<div class="marker-content">${o.Name}</div>`
-
-          // 添加水滴标注
-          this.createMarker({
-            location: stationLngLat,
-            offset: new AMap.Pixel(-10,-30)
-          });
-          // 添加文字标注
-          this.createMarker({
-            location: stationLngLat,
-            content: content,
-            offset: new AMap.Pixel(-50,-55)
-          });
-        });
       },
 
       /** 绘制标注 */
@@ -280,7 +312,7 @@
         });
       },
 
-      /** 绘制我到最近站点的路线 */
+      /** 封装我到最近站点的路线数据 */
       drayMyToLine(){
         let latestStation = this.disLatestStation( this.stationList );
         let tempStation = this.stationList.find( o => o.Name == latestStation.name );
@@ -294,7 +326,7 @@
         return lineArr;
       },
 
-      /** 绘制车辆到我最近站点路线 */
+      /** 封装车辆到我最近站点路线数据 */
       drawCarToLine(){
         let curStation = this.deviceStation( this.deviceLocation,  this.stationList);
         let my = this.disLatestStation( this.stationList );
@@ -312,14 +344,13 @@
             Lat: this.deviceLocation[0].baiduLat
           })
 
-          let line1 = this.lineSearch( sliceArr, 0 );
-          let line2 = this.lineSearch( this.drayMyToLine(), 1);
-          this.map.setFitView([line1, line2]);
+          return sliceArr;
         }
       },
 
       /** 绘制车辆整条路线
        * type = 0 : 车辆到我最近站点路线
+       * type = 1 : 我到距离最近站点路线
        */
       lineSearch( data, type ){
         let searchPath = data.map( o => {

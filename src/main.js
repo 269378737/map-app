@@ -6,7 +6,7 @@ import '@/assets/css/common.css'
 import App from './App.vue'
 import router from './router/router'
 import * as CommonApi from '@/assets/js/common-api.js'
-// import './mock/mock.js'
+import './mock/mock.js'
 Vue.use(CommonApi);
 
 Vue.config.productionTip = false;
