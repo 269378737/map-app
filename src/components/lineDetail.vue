@@ -60,20 +60,6 @@
 
         let run = () => {
           this.map.clearMap();
-          // this.getMyLocation().then( () => {
-          //   this.getStation().then( () => {
-          //     this.getDeviceLocation().then( () => {
-          //       this.carLocationMarker();
-          //       this.calculateArrive();
-          //       this.fitView();
-          //     });
-          //     this.showLatestStation();
-          //     this.lineSearch(this.stationList);
-          //     this.stationMarker();
-          //   })
-          // }).catch( e => {
-          //   console.error('发生错误，错误原因：', e)
-          // });
 
           Promise.all([
             this.getMyLocation(),
@@ -84,7 +70,6 @@
             this.calculateArrive();
             this.fitView();
             this.showLatestStation();
-            this.lineSearch(this.stationList);
             this.stationMarker();
           }).catch( e => {
             console.error('发生错误，错误原因：', e)
@@ -175,6 +160,7 @@
 
       /** 绘制各路线并根据路线大小缩放 */
       fitView(){
+        this.lineSearch(this.stationList);
         let line1 = this.lineSearch( this.drawCarToLine(), 0 );
         let line2 = this.lineSearch( this.drayMyToLine(), 1);
         this.map.setFitView([line1, line2]);
