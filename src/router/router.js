@@ -30,7 +30,7 @@ const router=new Router({
       }
     },
     {
-      path: '/lineDetail/:id',
+      path: '/lineDetail/:id/:timeId',
       name: 'lineDetail',
       component: resolve => require(['@/components/lineDetail'], resolve),
       meta: {
