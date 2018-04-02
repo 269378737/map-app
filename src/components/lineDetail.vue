@@ -32,7 +32,6 @@
     data(){
       return {
         timer: null,
-        cityinfo: null, // 当前城市
         deviceId: '',
         timeId: '',
         decState: 0,
@@ -53,20 +52,7 @@
       this.timeId = this.$route.params.timeId;
     },
     mounted(){
-      this.loadMap();
-    },
-    beforeDestroy(){
-      clearInterval(this.timer);
-    },
-    methods: {
-      /** 创建地图，保存地图实例 */
-      loadMap(){
-        this.map = new AMap.Map('container', {
-          zoom: 13,
-          resizeEnable: true, // 控制地图是否可以通过鼠标滚动来放大缩小
-          dragEnable: true, // 设置地图是否可以拖拽
-        });
-     
+      this.loadMap().then( () => {
         let run = () => {
           this.coverPrevArr = this.map.getAllOverlays(); // 获取地图上存在的覆盖物，不包括定位Marker
           Promise.all([
@@ -80,36 +66,79 @@
             this.showLatestStation();
             this.stationMarker();
 
-            this.driveingSearch();
+            this.driveingSearch(this.stationList, 0);
             this.map.remove(this.coverPrevArr);
           }).catch( e => console.error('发生错误，错误原因：', e));
         }
 
         run();
-        // this.timer = setInterval(() => {
-        //   this.isFirsGeoLocation = false;
-        //   run()
-        // }, 15000);
+        this.timer = setInterval(() => {
+          this.isFirsGeoLocation = false;
+          run()
+        }, 15000);
+      });
+    },
+    beforeDestroy(){
+      clearInterval(this.timer);
+    },
+    methods: {
+      /** 创建地图，保存地图实例 */
+      loadMap(){
+        return new Promise( (resolve, reject) => {
+          this.map = new AMap.Map('container', {
+            zoom: 13,
+            resizeEnable: true, // 控制地图是否可以通过鼠标滚动来放大缩小
+            dragEnable: true, // 设置地图是否可以拖拽
+          }); resolve();
+        });
       },
 
 
       /** 站点标注 */
       stationMarker(){
-        this.stationList.forEach( o => {
+        let arrMarker = [], arrText = [];
+        this.stationList.forEach( (o, index) => {
           let stationLngLat = [ o.Lng, o.Lat ];
           let content = `<div class="marker-content">${o.Name}</div>`
 
+          let icon = new AMap.Icon({
+            image : index == 0 
+                    ? 'https://webapi.amap.com/theme/v1.3/markers/n/start.png' : index == this.stationList.length - 1 
+                    ? 'https://webapi.amap.com/theme/v1.3/markers/n/end.png' 
+                    : 'https://webapi.amap.com/theme/v1.3/markers/n/mark_bs.png'
+          });
+
           // 添加水滴标注
-          this.createMarker({
+          let marker = this.createMarker({
             location: stationLngLat,
-            offset: new AMap.Pixel(-10,-30)
+            offset: new AMap.Pixel(-10,-30),
+            img: icon
           });
           // 添加文字标注
-          this.createMarker({
+          let text = this.createMarker({
             location: stationLngLat,
             content: content,
             offset: new AMap.Pixel(-50,-55)
           });
+          if (index != 0 && index != this.stationList.length - 1) {
+            arrMarker.push(marker);
+            arrText.push(text);
+          }
+        });
+        // 根据地图缩放级别显示隐藏站点文字与标注
+        this.map.on('zoomend' ,() => {
+          let zoom = this.map.getZoom();
+          // 缩放级别<= 15时 隐藏文字
+          if (zoom <= 15) { 
+            arrText.forEach( o => o.hide())
+          } else {
+            arrText.forEach( o => o.show())
+          }
+          if (zoom <= 13) {
+            arrMarker.forEach( o => o.hide())
+          } else {
+            arrMarker.forEach( o => o.show())
+          }
         });
       },
       
@@ -165,11 +194,16 @@
       /** 标注车辆位置 */
       carLocationMarker(){
         let deviceLngLat = [ this.deviceLocation[0].baiduLng, this.deviceLocation[0].baiduLat ];
+        let icon = new AMap.Icon({
+          image : './static/img/icon_carDetailLocation.png',
+          imageSize: new AMap.Size(40,40),
+          size : new AMap.Size(40,40),
+        });
         // 标注车辆位置
         this.createMarker({
           location: deviceLngLat,
           offset: new AMap.Pixel(-20,-25),
-          img: './static/img/icon_carDetailLocation.png'
+          img: icon
         });
       },
 
@@ -181,11 +215,15 @@
 
       /** 绘制各路线并根据路线大小缩放 */
       fitView(){
-        // this.lineSearch(this.stationList);
-        let line1 = this.lineSearch( this.drawCarToLine(), 0 );
-        let line2 = this.walkingSearch(this.drayMyToLine());
-        //let line2 = this.lineSearch( this.drayMyToLine(), 1);
-        //this.map.setFitView([line1, line2]);
+        this.driveingSearch( this.drawCarToLine(), 1 );
+        this.walkingSearch(this.drayMyToLine());
+       
+        // 自动缩放适应
+		    let line1 = this.lineSearch( this.drawCarToLine() );
+        let line2 = this.lineSearch( this.drayMyToLine() );
+        this.map.setFitView([line1, line2]);
+
+        this.map.setZoom( this.map.getZoom() - 1);
       },
 
       /*************************************************分割线******************************************/
@@ -306,20 +344,14 @@
       /** 绘制标注 */
       createMarker({location, img, offset, content }) {
         // 在地图上标注车辆当前位置
-        let icon = new AMap.Icon({
-          image : img,
-          imageSize: new AMap.Size(40,40),
-          //icon可缺省，缺省时为默认的蓝色水滴图标，
-          size : new AMap.Size(40,40),
-        });
-
         let marker = new AMap.Marker({
           content: content || '',
-          icon : img ? icon : '',
+          icon : img,
           position : location,
           offset : offset,
           map : this.map
-        });
+        })
+        return marker;
       },
 
       /** 封装我到最近站点的路线数据 */
@@ -374,10 +406,7 @@
         });
         let walk;
         AMap.service(["AMap.Walking"], () => {
-          walk = new AMap.Walking({
-            map: this.map
-          }); 
-
+          walk = new AMap.Walking(); 
           walk.search(searchPath[0], searchPath[1], (status, result) => {
               let steps = result.routes[0].steps;
               let tempPath = steps.reduce( (a, b) => a.concat(b.path), [])
@@ -396,14 +425,14 @@
       },
 
       /** 驾车路线规划 */
-      driveingSearch(){
+      driveingSearch(statons, type){
         //构造路线导航类
        // let paths = [];
         AMap.service(["AMap.Driving"], () => {
           let driving = new AMap.Driving(); 
-          this.stationList.forEach( (o, index) => {
+          statons.forEach( (o, index) => {
             if (index != 0) {
-              let prevStation = this.stationList[index - 1];
+              let prevStation = statons[index - 1];
               
               driving.search( [prevStation.Lng, prevStation.Lat], [o.Lng, o.Lat], (status, result) => {
                 let steps = result.routes[0].steps;
@@ -412,7 +441,7 @@
                 let poy = new AMap.Polyline({
                     path: tempPath,          //设置线覆盖物路径
                     strokeColor: "#09f", //线颜色
-                    strokeOpacity: 0.4,       //线透明度
+                    strokeOpacity: type == 0 ? 0.4 : 0.8,       //线透明度
                     strokeWeight: 7,        //线宽
                     strokeStyle: "solid",   //线样式
                     showDir: true,
@@ -426,33 +455,17 @@
       },
 
 
-      /** 绘制车辆整条路线
-       * type = 0 : 车辆到我最近站点路线
-       * type = 1 : 我到距离最近站点路线
+      /** 绘制两点间直线 
+       *
        */
-      lineSearch( data, type ){
+      lineSearch( data ){
         let searchPath = data.map( o => {
           return [ o.Lng, o.Lat ]
         });
-        var polyline = type == 0 ? new AMap.Polyline({
+        var polyline = new AMap.Polyline({
             path: searchPath,          //设置线覆盖物路径
             strokeColor: "#09f", //线颜色
-            strokeOpacity: 0.8,       //线透明度
-            strokeWeight: 7,        //线宽
-            strokeStyle: "solid",   //线样式
-            showDir: true,
-            zIndex:52
-        }) : type == 1 ? new AMap.Polyline({
-            path: searchPath,          //设置线覆盖物路径
-            strokeColor: "#8cd34e", //线颜色
-            strokeOpacity: 0.8,       //线透明度
-            strokeWeight: 7,        //线宽
-            strokeStyle: "solid",   //线样式
-            showDir: true,
-        }) : new AMap.Polyline({
-            path: searchPath,          //设置线覆盖物路径
-            strokeColor: "#09f", //线颜色
-            strokeOpacity: 0.3,       //线透明度
+            strokeOpacity: 0,       //线透明度
             strokeWeight: 5,        //线宽
             strokeStyle: "dashed",   //线样式
             // showDir: true,
