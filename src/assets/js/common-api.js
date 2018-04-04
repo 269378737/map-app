@@ -27,4 +27,14 @@ exports.install = function (Vue, options) {
     return formData;
   }
 
+  /**
+   * 获取url上参数
+   * @param {获取指定参数的key} name 
+   */
+  Vue.prototype.getQueryString = function (name) {
+    var reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)","i");
+    var r = window.location.search.substr(1).match(reg);
+    if (r!=null) return unescape(r[2]); return null;
+  }
+
 };

@@ -26,7 +26,7 @@
 </template>
 
 <script>
-  import {domain} from '@/assets/js/common-const-data'
+  import {domain, wxUrl} from '@/assets/js/common-const-data'
 
   export default{
     data(){
@@ -45,11 +45,17 @@
         deviceLocation: null, //设备位置信息
         coverPrevArr: [], // 地图上除定位Marker外的覆盖物（上次添加）,
         isFirsGeoLocation: true, // 判断是否是第一次进行定位
+        code: null,
       }
     },
     created: function () {
       this.deviceId = this.$route.params.id;
       this.timeId = this.$route.params.timeId;
+
+      this.code = this.getQueryString('code');
+      if (!this.code) {
+        window.location.href = wxUrl;
+      }
     },
     mounted(){
       this.loadMap().then( () => {
@@ -62,12 +68,12 @@
           ]).then( () => {
             this.carLocationMarker();
             this.calculateArrive();
-            this.fitView();
             this.showLatestStation();
             this.stationMarker();
 
             this.driveingSearch(this.stationList, 0);
             this.map.remove(this.coverPrevArr);
+            this.fitView();
           }).catch( e => console.error('发生错误，错误原因：', e));
         }
 
@@ -89,6 +95,7 @@
             zoom: 13,
             resizeEnable: true, // 控制地图是否可以通过鼠标滚动来放大缩小
             dragEnable: true, // 设置地图是否可以拖拽
+            features: ['bg', 'road']
           }); resolve();
         });
       },
@@ -144,7 +151,7 @@
       
       toAttention(){
         var self = this, url = '', formData = new FormData();
-        url = self.decState == 0 ? '/gps/index.php/device/addFellow' : '/gps/index.php/device/delFellow';
+        url = self.decState == 0 ? '/gps/index.php/device/addFellow/?code=' + this.code : '/gps/index.php/device/delFellow/?code=' + this.code;
         formData.append('DeviceID', self.deviceId);
         self.$http.post(domain+url, formData)
           .then(function (response) {
@@ -219,9 +226,9 @@
         this.walkingSearch(this.drayMyToLine());
        
         // 自动缩放适应
-		    let line1 = this.lineSearch( this.drawCarToLine() );
-        let line2 = this.lineSearch( this.drayMyToLine() );
-        this.map.setFitView([line1, line2]);
+		    // let line1 = this.lineSearch( this.drawCarToLine() );
+        // let line2 = this.lineSearch( this.drayMyToLine() );
+        this.map.setFitView(this.map.getAllOverlays());
 
         this.map.setZoom( this.map.getZoom() - 1);
       },
@@ -279,7 +286,7 @@
           timeid: this.timeId
         });
         return new Promise( (resolve, reject) => {
-          this.$http.post(`${domain}/gps/index.php/Location/getStation`, data).then( res => {
+          this.$http.post(`${domain}/gps/index.php/Location/getStation/?code=${this.code}`, data).then( res => {
             let data = res.data;
             this.decState = data.state;
             this.stationList = data.data;
@@ -297,7 +304,7 @@
           DeviceID: this.deviceId,
         });
         return new Promise( (resolve, reject) => {
-          this.$http.post(`${domain}/gps/index.php/Location/getLocation`, data).then(res => {
+          this.$http.post(`${domain}/gps/index.php/Location/getLocation/?code=${this.code}`, data).then(res => {
             if(res.data.length <= 0){ reject(`获取车辆位置信息出错，车辆数据为空！`); }
             this.deviceLocation = res.data; resolve();
           }).catch(e => {

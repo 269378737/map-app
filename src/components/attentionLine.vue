@@ -29,7 +29,7 @@
 </template>
 
 <script>
-  import {domain} from '@/assets/js/common-const-data'
+  import {domain, wxUrl } from '@/assets/js/common-const-data'
   export default {
     data () {
       return {
@@ -37,10 +37,15 @@
       }
     },
     created:function () {
-      var self=this;
-      self.$http.post(domain+'/gps/index.php/device/getFollow').then((response) => {
-        self.dataList=response.data;
-      })
+      let code = this.getQueryString('code');
+      if (!code) {
+        window.location.href = wxUrl;
+      } else {
+        var self=this;
+        self.$http.post(domain+'/gps/index.php/device/getFollow/?code=' + code).then((response) => {
+          self.dataList=response.data;
+        })
+      }
     }
   }
 </script>
