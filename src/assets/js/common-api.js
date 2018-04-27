@@ -3,12 +3,13 @@ exports.install = function (Vue, options) {
     let dialog = `<div id="dialog">
        <div id="dialog_content">${msg}</div>
 </div>`;
-    if ($('#dialog').length == 0) {
-      $('body').append(dialog);
-      setTimeout(function () {
-        $('#dialog').remove();
-      }, 3000)
-    }
+    if ($('#dialog').length > 0) { $('#dialog').remove(); }
+    $('body').append(dialog);
+    $('#dialog_content').addClass('scale');
+    let timer = setTimeout(function () {
+      $('#dialog').fadeOut();
+      clearTimeout(timer);
+    }, 1500)
   };
 
   /**

@@ -79,7 +79,7 @@ img, span {
 }
 
 /*提示框的样式*/
-#dialog {
+/* #dialog {
   position: fixed;
   top: 0;
   left: 0;
@@ -87,23 +87,29 @@ img, span {
   height: 100%;
   background: rgba(0, 0, 0, .5);
   z-index: 99;
-}
+} */
 
 #dialog_content {
-  position: absolute;
-  top: 50%;
+  position: fixed;
+  bottom: 1rem;
   left: 50%;
-  -webkit-transform: translate(-50%, -50%);
-  -moz-transform: translate(-50%, -50%);
-  -ms-transform: translate(-50%, -50%);
-  -o-transform: translate(-50%, -50%);
-  transform: translate(-50%, -50%);
-  width: 90%;
-  background-color: #fff;
+  margin-left: -17.5%;
+  width: 35%;
+  background-color: #656363;
   text-align: center;
-  padding: 1.17rem 0;
-  border-radius: 3px;
+  padding: 0.6rem 0;
+  border-radius: 5px;
   font-size: .78rem;
+  color: #fff;
+}
+
+.scale{
+  animation: scale .3s cubic-bezier(0.18, 0.89, 0.32, 1.28)
+}
+
+@keyframes scale {
+  from { transform: scale(0); }
+  to{ transform: scale(1)}
 }
 
 ul {
@@ -144,6 +150,22 @@ ul li {
 
 .list_item.list_item_img img {
   width: 1.3rem;
+}
+
+.list_item_img .status{
+  font-size: 12px;
+  margin-left: 5px;
+  color: #fff;
+  padding: 3px 7px;
+  top: -2px;
+  position: relative;
+  border-radius: 3px;
+}
+.list_item_img .leave{
+  background: #c31a07;
+}
+.list_item_img .no-leave{
+  background: #36b920;
 }
 
 .list_item > div.list_item_spec {

@@ -81,9 +81,10 @@ var template1 = [{
         "isStop": "1",
         "stopTimeMinute": "7",
         "carStatus": "",
-        "station": 3,
+        "station": 7,
+        "statu": 1,
         "status": "Offline",
         "time": "1521161926"
   }];
-Mock.mock(`/api/gps/index.php/Location/getStation`,template)
-Mock.mock(`/api/gps/index.php/Location/getLocation`,template1)
+Mock.mock(`/api/gps/index.php?m=Home&c=Location&a=getStation&code=null`,template)
+Mock.mock(`/api/gps/index.php?m=Home&c=Location&a=getLocation&code=null`,template1)

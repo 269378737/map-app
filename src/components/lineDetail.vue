@@ -17,8 +17,8 @@
           <div>
             <img src="../assets/img/icon_carDetail.png" alt="">
           </div>
-          <div v-if="isStart"><span>距离你<span class="tip">{{ disStation }}</span>个站</span><span>大约需要<span class="tip">{{ times }}</span>分钟</span></div>
-          <div v-else>{{ disStation }}</div>
+          <div v-if="isStart" @click="showPath"><span>距离你<span class="tip">{{ disStation }}</span>个站</span><span>大约需要<span class="tip">{{ times }}</span>分钟</span></div>
+          <div v-else @click="showPath">{{ disStation }} <i class="fa fa-angle-right arrow-right"></i></div>
         </div>
       </div>
     </div>
@@ -46,6 +46,29 @@
         coverPrevArr: [], // 地图上除定位Marker外的覆盖物（上次添加）,
         isFirsGeoLocation: true, // 判断是否是第一次进行定位
         code: null,
+        geolocation: null,
+        courseName: { 
+          dueNorth: "正北", 
+          northeast: "东北", 
+          dueEast: "正东", 
+          southeast: "东南", 
+          dueSouth: "正南", 
+          southwest: "西南", 
+          dueWest: "正西", 
+          northwest: "西北" 
+        },
+        // ====由于定时器轮询，很多数据需要以单例模式保存，以防出现性能问题，下方数据应用于此======
+        geoEventCompelete: null, // 保存定位事件监听对象--定位完成事件
+        geoEventError: null, // 保存定位事件监听对象--定位出错事件
+        deviceIcon: null, // 设备标注图标
+        deviceMarker: null, // 设备标注对象
+        stationMarkerArr: [], // 站点标注对象
+        stationTextArr: [], // 站点文字描述对象
+        infoWindow: null, // 设备信息窗体
+        deviceIconEventClick: null, // 设置标注点击事件 
+        polylineAllPath: null, // 整条路线
+        polylineToMe: null, // 距离我最近站点的路线
+        polylineWalk: null, // 我步行路线
       }
     },
     created: function () {
@@ -53,35 +76,46 @@
       this.timeId = this.$route.params.timeId;
 
       this.code = this.getQueryString('code');
-      if (!this.code) {
+      if (!this.code && process.env.NODE_ENV === 'production') {
         window.location.href = wxUrl;
       }
     },
     mounted(){
+      this.polylineAllPath = this.createPolyline('#09f', 0.4, 52);
+      this.polylineToMe = this.createPolyline('#09f', 0.8, 52);
+      this.polylineWalk = this.createPolyline('#8cd34e', 0.8, 55);
       this.loadMap().then( () => {
-        let run = () => {
-          this.coverPrevArr = this.map.getAllOverlays(); // 获取地图上存在的覆盖物，不包括定位Marker
-          Promise.all([
-            this.getMyLocation(),
-            this.getStation(),
-            this.getDeviceLocation()
-          ]).then( () => {
-            this.carLocationMarker();
-            this.calculateArrive();
-            this.showLatestStation();
-            this.stationMarker();
+        this.createGeolocation().then( () => {
+          let run = () => {
+            this.coverPrevArr = this.map.getAllOverlays(); // 获取地图上存在的覆盖物，不包括定位Marker
+            Promise.all([
+              this.getGeolocation(),
+              this.getStation(),
+              this.getDeviceLocation()
+            ]).then( () => {
+              Promise.all([
+                this.carLocationMarker(),
+                this.calculateArrive(),
+                this.showLatestStation(),
+                this.stationMarker(),
 
-            this.driveingSearch(this.stationList, 0);
-            this.map.remove(this.coverPrevArr);
-            this.fitView();
-          }).catch( e => console.error('发生错误，错误原因：', e));
-        }
+                this.driveingSearch(this.stationList, 0),
+                this.fitView()
+              ]).then( () => {
+                this.map.remove(this.coverPrevArr);
+              })
+              
+            }).catch( e => console.error('发生错误，错误原因：', e));
+          }
 
-        run();
-        this.timer = setInterval(() => {
-          this.isFirsGeoLocation = false;
-          run()
-        }, 15000);
+          run();
+          this.timer = setInterval( () => {
+            this.isFirsGeoLocation = false;
+            run()
+          }, 15000);
+          
+        });
+            
       });
     },
     beforeDestroy(){
@@ -99,11 +133,11 @@
           }); resolve();
         });
       },
-
-
       /** 站点标注 */
       stationMarker(){
-        let arrMarker = [], arrText = [];
+        // 清空数组
+        this.stationMarkerArr.length = 0;
+        this.stationTextArr.length = 0;
         this.stationList.forEach( (o, index) => {
           let stationLngLat = [ o.Lng, o.Lat ];
           let content = `<div class="marker-content">${o.Name}</div>`
@@ -128,43 +162,46 @@
             offset: new AMap.Pixel(-50,-55)
           });
           if (index != 0 && index != this.stationList.length - 1) {
-            arrMarker.push(marker);
-            arrText.push(text);
+            this.stationMarkerArr.push(marker);
+            this.stationTextArr.push(text);
           }
         });
+
         // 根据地图缩放级别显示隐藏站点文字与标注
         this.map.on('zoomend' ,() => {
           let zoom = this.map.getZoom();
           // 缩放级别<= 15时 隐藏文字
           if (zoom <= 15) { 
-            arrText.forEach( o => o.hide())
+            this.stationTextArr.forEach( o => o.hide())
           } else {
-            arrText.forEach( o => o.show())
+            this.stationTextArr.forEach( o => o.show())
           }
           if (zoom <= 13) {
-            arrMarker.forEach( o => o.hide())
+            this.stationMarkerArr.forEach( o => o.hide())
           } else {
-            arrMarker.forEach( o => o.show())
+            this.stationMarkerArr.forEach( o => o.show())
           }
         });
       },
       
       toAttention(){
-        var self = this, url = '', formData = new FormData();
-        url = self.decState == 0 ? '/gps/index.php/device/addFellow/?code=' + this.code : '/gps/index.php/device/delFellow/?code=' + this.code;
-        formData.append('DeviceID', self.deviceId);
-        self.$http.post(domain+url, formData)
-          .then(function (response) {
-            if (response.data.return) {
-              self.decState = self.decState == 0 ? 1 : 0;
-              self.showDialog('操作成功！');
-            } else {
-              self.showDialog('操作失败！')
-            }
-          })
-          .catch(function (error) {
-            console.log(error);
-          });
+        let url = this.decState == 0 
+                  ? `${domain}/gps/index.php?m=Home&c=Device&a=addFellow&code=${this.code}` 
+                  : `${domain}/gps/index.php?m=Home&c=Device&a=delFellow&code=${this.code}`;
+        let formData = this.createFormData({
+            'DeviceID': this.deviceId,
+            'timeid': this.timeId
+        });
+        this.$http.post(url, formData).then( (response) => {
+          if (response.data.return) {
+            this.decState = this.decState == 0 ? 1 : 0;
+            this.showDialog('操作成功！');
+          } else {
+            this.showDialog('操作失败！');
+          }
+        }).catch(function (error) {
+          console.log(error);
+        });
       },
       
       /** 计算车辆离我最近站还有几个站以及多久到达 */
@@ -175,7 +212,8 @@
         let tempMy = this.stationList.find( o => o.Name == my.name );
         let tempCur = this.stationList.find( o => o.Name == curStation.name );
 
-        if(!this.deviceLocation[0].station) {
+        // statu : 0 未发车， 1 已发车
+        if(!this.deviceLocation[0].statu) {
           this.disStation = '暂未发车'; return;
         }
 
@@ -188,7 +226,7 @@
 
           // 计算车辆离 我附近最近的站点的距离(米)，并计算出所需时长
           let distance = AMap.GeometryUtil.distance([tempMy.Lng, tempMy.Lat], [ tempCur.Lng, tempCur.Lat ]);
-          this.times = this.deviceLocation[0].speed == 0 ? 0 : Math.round(((distance / 1000) / parseFloat(this.deviceLocation[0].speed)) * 60);
+          this.times = this.deviceLocation[0].speedAvg == 0 ? '-' : Math.round(((distance / 1000) / parseFloat(this.deviceLocation[0].speedAvg)) * 60);
         } else if (this.deviceLocation[0].station == tempMy.id && curStation.distance <= 50) {
           this.isStart = false;
           this.disStation = `已到站`;
@@ -201,16 +239,37 @@
       /** 标注车辆位置 */
       carLocationMarker(){
         let deviceLngLat = [ this.deviceLocation[0].baiduLng, this.deviceLocation[0].baiduLat ];
-        let icon = new AMap.Icon({
-          image : './static/img/icon_carDetailLocation.png',
-          imageSize: new AMap.Size(40,40),
-          size : new AMap.Size(40,40),
-        });
+        if (!this.deviceIcon) {
+          this.deviceIcon = new AMap.Icon({
+            image : './static/img/icon_carDetailLocation.png',
+            imageSize: new AMap.Size(40,40),
+            size : new AMap.Size(40,40),
+          });
+        }
+        
         // 标注车辆位置
-        this.createMarker({
+        this.deviceMarker = this.createMarker({
           location: deviceLngLat,
           offset: new AMap.Pixel(-20,-25),
-          img: icon
+          img: this.deviceIcon
+        });
+
+        // 添加信息窗体，鼠标点击车辆标注时打开信息窗体
+        if (this.isFirsGeoLocation) {
+          let info = [];
+          info.push(`<b>${this.deviceLocation[0].name}</b>`);
+          info.push(`状态：${this.deviceLocation[0].status == 'Stop' ? '静止' : this.deviceLocation[0].status == 'Offline' ? '离线 ' : '行驶'}`);
+          info.push(`定位时间：${this.deviceLocation[0].deviceUtcDate}`);
+          info.push(`方向：${this.getCourseName(this.deviceLocation[0].course)}`);
+          info.push(`速度：${parseFloat(this.deviceLocation[0].speed).toFixed(2)}公里/小时`);
+          this.infoWindow = new AMap.InfoWindow({
+              content: info.join("<br/>") 
+          });
+        }
+
+        AMap.event.removeListener(this.deviceIconEventClick);
+        this.deviceIconEventClick = AMap.event.addListener(this.deviceMarker, 'click', () => {
+            this.infoWindow.open(this.map, this.deviceMarker.getPosition());
         });
       },
 
@@ -234,12 +293,11 @@
       },
 
       /*************************************************分割线******************************************/
-
-      /** 定位 */
-      getMyLocation(){
+      /** 创建定位对象 */
+      createGeolocation() {
         return new Promise( (resolve, reject) => {
           this.map.plugin('AMap.Geolocation', () => {
-            let geolocation = new AMap.Geolocation({
+            this.geolocation = new AMap.Geolocation({
               enableHighAccuracy: true,//是否使用高精度定位，默认:true
               timeout: 10000,          //超过10秒后停止定位，默认：无穷大
               maximumAge: 0,           //定位结果缓存0毫秒，默认：0
@@ -256,29 +314,64 @@
                 }),
                 offset: new AMap.Pixel(-15,-30),
               },        // 定位点Marker设置
-              showCircle: true,        //定位成功后用圆圈表示定位精度范围，默认：true
-              panToLocation: true,     //定位成功后将定位到的位置作为地图中心点，默认：true
+              showCircle: false,        //定位成功后用圆圈表示定位精度范围，默认：true
+              panToLocation: false,     //定位成功后将定位到的位置作为地图中心点，默认：true
               zoomToAccuracy: true,      //定位成功后调整地图视野范围使定位位置及精度范围视野内可见，默认：false
               useNative: true,
               GeoLocationFirst: false,   // 使用浏览器定位比较慢
               noIpLocate: 0,
-              noGeoLocation: 3
+              noGeoLocation: process.env.NODE_ENV === 'production' ? 2 : 3
               // buttonDom: '<i class="el-icon-location-outline"></i>'
             });
             
-            this.map.addControl(geolocation);
-            geolocation.getCurrentPosition();
-            AMap.event.addListener(geolocation, 'complete', (res) => {
-              this.myLocationInfo = res; resolve();
-            });//返回定位信息
-            AMap.event.addListener(geolocation, 'error', (e) => {
-              alert("定位失败");
-              reject(e);
-            });      //返回定位出错信息
+            this.map.addControl(this.geolocation);
+            resolve();
           });
-        })
+        });
+      },
+
+      /** 绑定定位事件 */
+      getGeolocation() {
+        return new Promise( (resolve, reject) => {
+          AMap.event.removeListener(this.geoEventCompelete);
+          AMap.event.removeListener(this.geoEventError);
+          this.geolocation.getCurrentPosition();
+          this.geoEventCompelete = AMap.event.addListener(this.geolocation, 'complete', (res) => {
+            this.myLocationInfo = res; resolve();
+          });//返回定位信息
+          this.geoEventError = AMap.event.addListener(this.geolocation, 'error', (e) => {
+            alert("定位失败");
+            reject(e);
+          });      //返回定位出错信息
+        });
       },
       
+      // 计算方向
+      getCourseName(course){
+        let name = "";
+        course = parseFloat(course);
+        if ((course >= 0 && course < 22.5) || (course >= 337.5 && course < 360)) {
+            name = this.courseName.dueNorth; //北
+        } else if (course >= 22.5 && course < 67.5) {
+            name = this.courseName.northeast;  //东北
+        } else if (course >= 67.5 && course < 112.5) {
+            name = this.courseName.dueEast; //正东
+        } else if (course >= 112.5 && course < 157.5) {
+            name = this.courseName.southeast; //东南
+        } else if (course >= 157.5 && course < 202.5) {
+            name = this.courseName.dueSouth; //正南
+        } else if (course >= 202.5 && course < 247.5) {
+            name = this.courseName.southwest; //西南
+        } else if (course >= 247.5 && course < 292.5) {
+            name = this.courseName.dueWest; //正西
+        } else if (course >= 292.5 && course < 337.5) {
+            name = this.courseName.northwest; //西北
+        } else {
+            name = "--";
+        }
+        return name;
+      },
+
       /** 获取指定车辆的站点信息 */
       getStation(){
         let data = this.createFormData({
@@ -286,7 +379,8 @@
           timeid: this.timeId
         });
         return new Promise( (resolve, reject) => {
-          this.$http.post(`${domain}/gps/index.php/Location/getStation/?code=${this.code}`, data).then( res => {
+          let url = `${domain}/gps/index.php?m=Home&c=Location&a=getStation&code=${this.code}`
+          this.$http.post(url, data).then( res => {
             let data = res.data;
             this.decState = data.state;
             this.stationList = data.data;
@@ -302,9 +396,11 @@
       getDeviceLocation(){
         let data = this.createFormData({
           DeviceID: this.deviceId,
+          timeid: this.timeId
         });
         return new Promise( (resolve, reject) => {
-          this.$http.post(`${domain}/gps/index.php/Location/getLocation/?code=${this.code}`, data).then(res => {
+          let url = `${domain}/gps/index.php?m=Home&c=Location&a=getLocation&code=${this.code}`;
+          this.$http.post(url, data).then(res => {
             if(res.data.length <= 0){ reject(`获取车辆位置信息出错，车辆数据为空！`); }
             this.deviceLocation = res.data; resolve();
           }).catch(e => {
@@ -409,15 +505,19 @@
       /** 步行路线规划 */
       walkingSearch(data) {
         let searchPath = data.map( o => {
-          return [ o.Lng, o.Lat ]
+          return [ parseFloat(o.Lng), parseFloat(o.Lat) ]
         });
         let walk;
+        
         AMap.service(["AMap.Walking"], () => {
           walk = new AMap.Walking(); 
           walk.search(searchPath[0], searchPath[1], (status, result) => {
               let steps = result.routes[0].steps;
               let tempPath = steps.reduce( (a, b) => a.concat(b.path), [])
+              // this.polylineWalk.setPath(tempPath)
+              // this.polylineWalk.setMap(this.map)
               let poy = new AMap.Polyline({
+                  //map: this.map,
                   path: tempPath,          //设置线覆盖物路径
                   strokeColor: "#8cd34e", //线颜色
                   strokeOpacity: 0.8,       //线透明度
@@ -426,15 +526,17 @@
                   showDir: true,
                   zIndex:55
               })
-              poy.setMap(this.map)
+              // poy.setMap(this.map);
+              //poy = null;
           });
         });
       },
 
+
+
       /** 驾车路线规划 */
       driveingSearch(statons, type){
         //构造路线导航类
-       // let paths = [];
         AMap.service(["AMap.Driving"], () => {
           let driving = new AMap.Driving(); 
           statons.forEach( (o, index) => {
@@ -443,27 +545,53 @@
               
               driving.search( [prevStation.Lng, prevStation.Lat], [o.Lng, o.Lat], (status, result) => {
                 let steps = result.routes[0].steps;
-                let tempPath = steps.reduce( (a, b) => a.concat(b.path), [])
-               // paths = paths.concat(tempPath)
+                let tempPath = steps.reduce( (a, b) => a.concat(b.path), []);
                 let poy = new AMap.Polyline({
-                    path: tempPath,          //设置线覆盖物路径
-                    strokeColor: "#09f", //线颜色
-                    strokeOpacity: type == 0 ? 0.4 : 0.8,       //线透明度
-                    strokeWeight: 7,        //线宽
-                    strokeStyle: "solid",   //线样式
-                    showDir: true,
-                    zIndex:52
+                  map: this.map,
+                  path: tempPath,          //设置线覆盖物路径
+                  strokeColor: "#09f", //线颜色
+                  strokeOpacity: type == 0 ? 0.4 : 0.8,       //线透明度
+                  strokeWeight: 7,        //线宽
+                  strokeStyle: "solid",   //线样式
+                  showDir: true,
+                  zIndex:52
                 })
-                poy.setMap(this.map)
+                // poy.setMap(this.map);
+                // //poy = null;
+                // if (type == 0) {
+                //   console.log(this.polylineAllPath);
+                //   this.polylineAllPath.setPath(tempPath);
+                //   this.polylineAllPath.setMap(this.map);
+                // } else {
+                //   this.polylineToMe.setPath(tempPath)
+                //   this.polylineToMe.setMap(this.map);
+                // }
               });
             }
           });
         });
       },
+      
 
+      /** 绘制路线 */
+      createPolyline(color, opacity, zIndex) {
+        return new AMap.Polyline({
+          // map: this.map,
+          strokeColor: color, //线颜色
+          strokeOpacity: opacity,       //线透明度
+          strokeWeight: 7,        //线宽
+          strokeStyle: "solid",   //线样式
+          showDir: true,
+          zIndex:zIndex
+        });
+      },
+
+      showPath() {
+        this.$router.push({ name: 'linePath', params: { id: this.deviceId, timeid: this.timeId }});
+      },
 
       /** 绘制两点间直线 
-       *
+       * 暂时无用
        */
       lineSearch( data ){
         let searchPath = data.map( o => {
@@ -574,4 +702,9 @@
     margin-left: 1.17rem;
   }
 
+  .arrow-right{
+    float: right;
+    margin-right: 1rem;
+    margin-top: 0.2rem;
+  }
 </style>

@@ -14,7 +14,7 @@ const router=new Router({
 
   routes: [
     {
-      path: '/',
+      path: '/attentionLine',
       name: 'attentionLine',
       component: resolve => require(['@/components/attentionLine'], resolve),
       meta: {
@@ -22,7 +22,7 @@ const router=new Router({
       }
     },
     {
-      path: '/allLine',
+      path: '/',
       name: 'allLine',
       component: resolve => require(['@/components/allLine'], resolve),
       meta: {
@@ -33,6 +33,14 @@ const router=new Router({
       path: '/lineDetail/:id/:timeId',
       name: 'lineDetail',
       component: resolve => require(['@/components/lineDetail'], resolve),
+      meta: {
+        title: '路线详情'
+      }
+    },
+    {
+      path: '/linePath/:id/:timeId',
+      name: 'linePath',
+      component: resolve => require(['@/components/line-detail'], resolve),
       meta: {
         title: '路线详情'
       }

@@ -1,26 +1,24 @@
 <template>
   <div class="attentionLine">
     <ul>
-      <router-link :to="{name:'lineDetail',params:{id:data.DeviceID, timeId: data.timeid}}" tag="li" v-for="data in dataList" :key="data.DeviceID">
+      <router-link :to="{name:'linePath',params:{id:data.DeviceID, timeId: data.timeid || -1}}" tag="li" v-for="(data, index) in dataList" :key="index">
         <div class="list_item list_item_img clear_fix">
           <div>
             <img src="../assets/img/icon_car.png" alt="">
           </div>
-          <div>{{data.Number}}</div>
+          <div>{{data.Number}}<span class="status" :class="data.statu == 0 ? 'no-leave' : 'leave'">{{ data.statu == 1 ? '已发车' : '未发车' }}</span></div>
         </div>
         <div class="list_item clear_fix">
           <div>
             <img src="../assets/img/icon_time.png" alt="">
           </div>
-          <div class="list_item_spec" v-if="data.statu == 1 "> {{data.StartTime}}-{{data.EndTime}}</div>
-          <div class="list_item_spec" v-else>未发车</div>
+          <div class="list_item_spec"> {{data.StartTime}} - {{data.EndTime}}</div>
         </div>
         <div class="list_item clear_fix">
           <div>
             <img src="../assets/img/icon_adr.png" alt="">
           </div>
-          <div class="list_item_spec" v-if="data.statu == 1 ">{{data.StartStation}}—{{data.EndStation}}</div>
-          <div class="list_item_spec" v-else>未发车</div>
+          <div class="list_item_spec">{{data.StartStation}} - {{data.EndStation}}</div>
         </div>
       </router-link>
     </ul>
@@ -33,19 +31,30 @@
   export default {
     data () {
       return {
-        dataList:[]
+        dataList:[],
+        timer: null,
+        code: null
       }
     },
-    created:function () {
-      let code = this.getQueryString('code');
-      if (!code) {
+    created() {
+      this.code = this.getQueryString('code');
+      if (!this.code && process.env.NODE_ENV === 'production') {
         window.location.href = wxUrl;
       } else {
-        var self=this;
-        self.$http.post(domain+'/gps/index.php/device/getFollow/?code=' + code).then((response) => {
-          self.dataList=response.data;
+        this.getFollows();
+        this.timer = setInterval(this.getFollows, 30000);
+      }
+    },
+    methods: {
+      getFollows() {
+        let url = `${domain}/gps/index.php?m=Home&c=Device&a=getFollow&code=` + this.code
+        this.$http.post(url).then((response) => {
+          this.dataList = response.data;
         })
       }
+    },
+    destroyed(){
+      clearInterval( this.timer );
     }
   }
 </script>
@@ -64,4 +73,5 @@
     background-color: #a1b0d7;
     color: #ffffff;
   }
+
 </style>
